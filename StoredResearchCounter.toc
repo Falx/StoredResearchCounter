@@ -1,0 +1,13 @@
+## Interface: 90100
+## Title: StoredResearchCounter
+## Author: Falx
+## Version: 1.0.0
+## Notes: Counts stored Cataloged Research in your bags
+## SavedVariables: StoredResearchCounterDB
+## X-Category: Bags & Inventory
+## X-Curse-Project-ID: 508565
+## X-WoWI-ID: 26119
+
+embeds.xml
+
+main.lua
