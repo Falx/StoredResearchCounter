@@ -34,6 +34,7 @@ local Format = {
 local FormatLabels = {"stored_only", "stored_plus_pool", "pool_plus_stored", "sum_only", "sum_plus_stored",
                       "stored_plus_sum", "pool_plus_sum", "custom_format"}
 
+local baggedAnima = 0
 local bucketListener = nil
 local worldListener = nil
 local currListener = nil
@@ -43,9 +44,12 @@ local configBreakLargeNumbers = true
 local configShowLabel = true
 local configShowIcon = true
 local configCustomFormat = "${stored}+${pool}=${sum}"
+local configTTStoredAnima = true
 local configTTBaggedAnima = true
 local configTTReservoirAnima = true
 local configTTTotalAnima = true
+local configTTBankedAnima = true
+local configCountBankedAnima = true
 
 local defaults = {
     profile = {
@@ -55,9 +59,13 @@ local defaults = {
         showLabel = true,
         showIcon = true,
         customFormat = "${stored}+${pool}=${sum}",
+        TTStoredAnima = true,
         TTBaggedAnima = true,
         TTReservoirAnima = true,
-        TTTotalAnima = true
+        TTTotalAnima = true,
+        TTBankedAnima = true,
+        countBankedAnima = true,
+        bankedAnima = 0
     }
 }
 
@@ -68,22 +76,32 @@ function StoredResearchCounter:SetUpHooks()
         if (configTTBaggedAnima or configTTReservoirAnima or configTTTotalAnima) then
             local item, link = GameTooltip:GetItem()
             if link ~= nil and isCatalogedResearchItem(link) then
-                local stored, pool, sum
+                local stored, pool, sum, banked, bagged
                 if configBreakLargeNumbers then
-                    stored = BreakUpLargeNumbers(ldbObject.value)
+                    stored = BreakUpLargeNumbers(StoredResearchCounter:GetStoredAnima())
                     pool = BreakUpLargeNumbers(GetTotalResearch())
-                    sum = BreakUpLargeNumbers(GetTotalResearch() + ldbObject.value)
+                    sum = BreakUpLargeNumbers(GetTotalResearch() + StoredResearchCounter:GetStoredAnima())
+                    bagged = BreakUpLargeNumbers(baggedAnima)
+                    banked = BreakUpLargeNumbers(bankedAnima)
                 else
-                    stored = ldbObject.value
+                    stored = StoredResearchCounter:GetStoredAnima()
                     pool = GetTotalResearch()
-                    sum = GetTotalResearch() + ldbObject.value
+                    sum = GetTotalResearch() + StoredResearchCounter:GetStoredAnima()
+                    bagged = baggedAnima
+                    banked = bankedAnima
                 end
 
-                if (configTTBaggedAnima or configTTReservoirAnima or configTTTotalAnima) then
+                if (configTTStoredAnima or configTTBaggedAnima or configTTReservoirAnima or configTTTotalAnima or configTTBankedAnima) then
                     self:AddLine("\n")
                 end
                 if configTTBaggedAnima then
                     self:AddDoubleLine("|cFFFF7F38Cataloged Research (bag):", "|cFFFFFFFF" .. stored .. "|r")
+                end
+                if configTTBankedAnima then
+                    self:AddDoubleLine("|cFFFF7F38Cataloged Research (bank):", "|cFFFFFFFF" .. banked .. "|r")
+                end
+                if configTTStoredAnima then
+                    self:AddDoubleLine("|cFFFF7F38Cataloged Research (stored):", "|cFFFFFFFF" .. stored .. "|r")
                 end
                 if configTTReservoirAnima then
                     self:AddDoubleLine("|cFFFF7F38Cataloged Research (Roh-Suir):", "|cFFFFFFFF" .. pool .. "|r")
@@ -104,6 +122,8 @@ function StoredResearchCounter:OnInitialize()
 end
 
 function StoredResearchCounter:OnEnable()
+    StoredResearchCounter:RefreshConfig()
+
     if worldListener == nil then
         worldListener = self:RegisterEvent("PLAYER_ENTERING_WORLD", "ScanForStoredAnimaDelayed")
     end
@@ -113,13 +133,27 @@ function StoredResearchCounter:OnEnable()
     end
 
     if bucketListener == nil then
-        bucketListener = self:RegisterBucketEvent("BAG_UPDATE", 0.2, "ScanForStoredAnima")
+        bucketListener = self:RegisterBucketEvent("BAG_UPDATE", 0.2, "ScanChange")
     end
-
-    StoredResearchCounter:RefreshConfig()
-
     
+    if bankListener == nil then
+        bankListener = self:RegisterBucketEvent("BANKFRAME_OPENED", 0.2, "ScanBankForStoredAnima")
+    end
 end
+
+function StoredResearchCounter:ScanChange(events)
+    for bagId,val in pairs(events) do 
+        if (bagId == -1 or (bagId > NUM_BAG_SLOTS and bagId <= NUM_BAG_SLOTS+NUM_BANKBAGSLOTS)) then
+            StoredResearchCounter:ScanBankForStoredAnima()
+        elseif (bagId >= 0 and bagId <= NUM_BAG_SLOTS) then
+            StoredResearchCounter:ScanForStoredAnima()
+        else
+            StoredResearchCounter:ScanBankForStoredAnima()
+            StoredResearchCounter:ScanForStoredAnima()
+        end
+    end
+end
+
 
 
 function StoredResearchCounter:OnDisable()
@@ -136,6 +170,11 @@ function StoredResearchCounter:OnDisable()
     if bucketListener then
         self:UnregisterBucket(bucketListener)
         bucketListener = nil
+    end
+    
+    if bankListener then
+        self:UnregisterBucket(bankListener)
+        bankListener = nil
     end
 end
 
@@ -261,6 +300,24 @@ function StoredResearchCounter:SetupConfig()
                         width = "full",
                         order = 2
                     },
+                    bankedAnimaToggle = {
+                        name = "Show banked Cataloged Research",
+                        desc = "Show total Cataloged Research currently stored in your bank",
+                        type = "toggle",
+                        set = "SetTTBankedAnima",
+                        get = "GetTTBankedAnima",
+                        width = "full",
+                        order = 3
+                    },
+                    storedAnimaToggle = {
+                        name = "Show stored Cataloged Research",
+                        desc = "Show total Cataloged Research currently stored in your bags and your bank (if configured to be counted)",
+                        type = "toggle",
+                        set = "SetTTStoredAnima",
+                        get = "GetTTStoredAnima",
+                        width = "full",
+                        order = 4
+                    },
                     reservoirAnimaToggle = {
                         name = "Show reservoir Cataloged Research",
                         desc = "Show amount of Cataloged Research at Archivist Roh-Suir",
@@ -297,8 +354,12 @@ function StoredResearchCounter:RefreshConfig()
     configShowIcon = self.db.profile.showIcon
     configCustomFormat = self.db.profile.customFormat
     configTTBaggedAnima = self.db.profile.TTBaggedAnima
+    configTTBankedAnima = self.db.profile.TTBankedAnima
+    configTTStoredAnima = self.db.profile.TTStoredAnima
     configTTReservoirAnima = self.db.profile.TTReservoirAnima
     configTTTotalAnima = self.db.profile.TTTotalAnima
+    configCountBankedAnima = self.db.profile.countBankedAnima
+    bankedAnima = self.db.profile.bankedAnima
     StoredResearchCounter:SetUpHooks()
     StoredResearchCounter:ScanForStoredAnima()
 end
@@ -341,6 +402,16 @@ function StoredResearchCounter:GetBreakLargeNumbers(info)
     return configBreakLargeNumbers
 end
 
+function StoredResearchCounter:SetCountBankedAnima(info, toggle)
+    configCountBankedAnima = toggle
+    self.db.profile.configCountBankedAnima = toggle
+    StoredResearchCounter:OutputValue()
+end
+
+function StoredResearchCounter:GetCountBankedAnima(info)
+    return configCountBankedAnima
+end
+
 function StoredResearchCounter:SetShowLabel(info, toggle)
     configShowLabel = toggle
     self.db.profile.showLabel = toggle
@@ -359,6 +430,16 @@ end
 
 function StoredResearchCounter:GetShowIcon(info)
     return configShowIcon
+end
+
+function StoredResearchCounter:SetTTStoredAnima(info, toggle)
+    configTTStoredAnima = toggle
+    self.db.profile.TTStoredAnima = toggle
+    StoredResearchCounter:OutputValue()
+end
+
+function StoredResearchCounter:GetTTStoredAnima(info)
+    return configTTStoredAnima
 end
 
 function StoredResearchCounter:SetTTBaggedAnima(info, toggle)
@@ -393,6 +474,16 @@ function StoredResearchCounter:GetTTTotalAnima(info)
     return configTTTotalAnima
 end
 
+function StoredResearchCounter:SetTTBankedAnima(info, toggle)
+    configTTBankedAnima = toggle
+    self.db.profile.TTBankedAnima = toggle
+    StoredResearchCounter:OutputValue()
+end
+
+function StoredResearchCounter:GetTTBankedAnima(info)
+    return configTTBankedAnima
+end
+
 function StoredResearchCounter:SetCustomFormat(info, input)
     configCustomFormat = input
     self.db.profile.customFormat = input
@@ -412,27 +503,62 @@ end
 function StoredResearchCounter:ScanForStoredAnima()
     vprint("Scanning:")
     local total = 0
-    for bag = 0, 4 do
+    -- for bag = 0, 4 do
+    for bag = BACKPACK_CONTAINER, NUM_BAG_SLOTS do
         local slots = GetContainerNumSlots(bag)
         for slot = 1, slots do
             total = total + (StoredResearchCounter:CountAnima(bag, slot) or 0)
         end
     end
-    StoredResearchCounter:OutputValue(total)
+    baggedAnima = total
+    StoredResearchCounter:OutputValue()
 end
 
-function StoredResearchCounter:OutputValue(storedAnima)
-    local stored, pool, sum
+function StoredResearchCounter:ScanBankForStoredAnima()
+    vprint("Scanning bank:")
+    local total = 0
+    local bankReadable = false;
+    -- Bank base container first
+    local slots = GetContainerNumSlots(BANK_CONTAINER)
+    bankReadable = slots > 0;
+    for slot = 1, slots do
+        total = total + (StoredResearchCounter:CountAnima(BANK_CONTAINER, slot))
+    end
+    -- Other bank bags
+    for bag = (NUM_BAG_SLOTS + 1), (NUM_BAG_SLOTS+NUM_BANKBAGSLOTS) do
+        local slots = GetContainerNumSlots(bag)
+        bankReadable = bankReadable and (slots > 0);
+        for slot = 1, slots do
+            total = total + (StoredResearchCounter:CountAnima(bag, slot))
+        end
+    end
+
+    if bankReadable then 
+        bankedAnima = total
+        StoredResearchCounter.db.profile.bankedAnima = total
+    else
+        bankedAnima = StoredResearchCounter.db.profile.bankedAnima or 0
+    end
+
+    StoredResearchCounter:OutputValue()
+end
+
+function StoredResearchCounter:OutputValue()
+    local stored, pool, sum, bagged, banked
 
     -- Breakdown large numbers
     if configBreakLargeNumbers then
-        stored = BreakUpLargeNumbers(storedAnima)
+        stored = BreakUpLargeNumbers(StoredResearchCounter:GetStoredAnima())
         pool = BreakUpLargeNumbers(GetTotalResearch())
-        sum = BreakUpLargeNumbers(GetTotalResearch() + storedAnima)
+        sum = BreakUpLargeNumbers(GetTotalResearch() + StoredResearchCounter:GetStoredAnima())
+        bagged = BreakUpLargeNumbers(baggedAnima)
+        banked = BreakUpLargeNumbers(bankedAnima)
     else
-        stored = storedAnima
+        stored = StoredResearchCounter:GetStoredAnima()
         pool = GetTotalResearch()
-        sum = GetTotalResearch() + storedAnima
+        sum = GetTotalResearch() + StoredResearchCounter:GetStoredAnima()
+        bagged = baggedAnima
+        banked = bankedAnima
     end
 
     -- Reset text
@@ -450,7 +576,7 @@ function StoredResearchCounter:OutputValue(storedAnima)
 
     -- Update values
     vprint(">> Total stored cataloged research: " .. stored)
-    ldbObject.value = storedAnima
+    ldbObject.value = StoredResearchCounter:GetStoredAnima()
     if configFormat == Format.stored then
         ldbObject.text = ldbObject.text .. string.format("%s", stored)
     elseif configFormat == Format.stored_plus_pool then
@@ -469,6 +595,8 @@ function StoredResearchCounter:OutputValue(storedAnima)
         local txt = string.gsub(configCustomFormat, "${stored}", stored)
         txt = string.gsub(txt, "${pool}", pool)
         txt = string.gsub(txt, "${sum}", sum)
+        txt = string.gsub(txt, "${bagged}", bagged)
+        txt = string.gsub(txt, "${banked}", banked)
         ldbObject.text = ldbObject.text .. txt
     end
 
@@ -561,6 +689,14 @@ function isCatalogedResearchItem(itemId)
     return false
 end
 
+function StoredResearchCounter:GetStoredAnima()
+    if (StoredResearchCounter:GetCountBankedAnima()) then
+        return baggedAnima + bankedAnima
+    else
+        return baggedAnima
+    end
+end
+
 function vprint(val)
     if configIsVerbose then
         print(val)
@@ -582,22 +718,30 @@ end
 local NORMAL_FONT_COLOR = {1.0, 0.82, 0.0}
 
 function ldbObject:OnTooltipShow()
-    local stored, pool, sum
+    local stored, pool, sum, banked, bagged
     if configBreakLargeNumbers then
-        stored = BreakUpLargeNumbers(ldbObject.value)
+        stored = BreakUpLargeNumbers(StoredResearchCounter:GetStoredAnima())
         pool = BreakUpLargeNumbers(GetTotalResearch())
-        sum = BreakUpLargeNumbers(GetTotalResearch() + ldbObject.value)
+        sum = BreakUpLargeNumbers(GetTotalResearch() + StoredResearchCounter:GetStoredAnima())
+        banked = BreakUpLargeNumbers(bankedAnima)
+        bagged = BreakUpLargeNumbers(baggedAnima)
     else
-        stored = ldbObject.value
+        stored = StoredResearchCounter:GetStoredAnima()
         pool = GetTotalResearch()
-        sum = GetTotalResearch() + ldbObject.value
+        sum = GetTotalResearch() + StoredResearchCounter:GetStoredAnima()
+        banked = bankedAnima
+        bagged = baggedAnima
     end
 
     self:AddLine("|cFFFF7F38Stored Research|r")
     self:AddLine("An overview of Cataloged Research stored in your bags, but not yet added to your Cataloged Research at Archivist Roh-Suir.", 1.0, 0.82,
         0.0, 1)
     self:AddLine("\n")
-    self:AddDoubleLine("Stored:", "|cFFFFFFFF" .. stored .. "|r")
+    self:AddDoubleLine("Bags:", "|cFFFFFFFF" .. bagged .. "|r")
+    if (configCountBankedAnima) then
+        self:AddDoubleLine("Bank:", "|cFFFFFFFF" .. banked .. "|r")
+        self:AddDoubleLine("Stored (bag+bank):", "|cFFFFFFFF" .. stored .. "|r")
+    end
     self:AddDoubleLine("Pooled:", "|cFFFFFFFF" .. pool .. "|r")
     self:AddDoubleLine("Total:", "|cFFFFFFFF" .. sum .. "|r")
 end
