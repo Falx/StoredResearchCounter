@@ -650,6 +650,7 @@ function StoredResearchCounter:CountAnima(bag, slot)
                     isResearch = true
                 elseif t ~= nil and isResearch and t:find(L["REGEX_USE"]) then
                     local num = t:match(L["REGEX_RESEARCH_VALUE"])
+                    print(num)
                     num = num:match("%d+")
                     researchCount = tonumber(num or "")
                 end
