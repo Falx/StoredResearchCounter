@@ -7,6 +7,7 @@ local AceDB = LibStub("AceDB-3.0")
 local AceConfig = LibStub("AceConfig-3.0")
 local AceConfigDialog = LibStub("AceConfigDialog-3.0")
 local LDB = LibStub:GetLibrary("LibDataBroker-1.1")
+local L = LibStub("AceLocale-3.0"):GetLocale("StoredResearchCounter")
 
 local iconString = '|T%s:16:16:0:0:64:64:4:60:4:60|t '
 
@@ -234,7 +235,7 @@ function StoredResearchCounter:SetupConfig()
                         order = 4
                     },
                     customFormatDesc = {
-                        name = "\nCreate your own custom format using one of the interpolated variables: ${stored}, ${pool}, ${sum}.\nThese variables will get replaced, all other characters remain untouched.",
+                        name = "\nCreate your own custom format using some of the interpolated variables: \n${stored} - All stored Cataloged Research (in bags and depending on config in bank too).\n${pool} - All pooled Cataloged Research (deposited at Archivist Roh-Suir).\n${sum} - The total of ${stored} and ${pool}.\n${bagged} - Only stored Cataloged Research from your player bags.\n${banked} - Only stored Cataloged Research from your bank.\nThese variables will get replaced, all other characters remain untouched.",
                         type = "description",
                         order = 5
                     },
@@ -645,10 +646,10 @@ function StoredResearchCounter:CountAnima(bag, slot)
             for j = 1, #tooltip.tipText do
                 local t = tooltip.tipText[j]:GetText()
                 -- Cataloged Research isn't matching the tooltip text properly, so have to search on substring
-                if xpac == 8 and t ~= nil and itemClassID == 15 and itemSubClassID == 4 and t:find("Korthian Relics|r$") then
+                if xpac == 8 and t ~= nil and itemClassID == 15 and itemSubClassID == 4 and t:find(L["REGEX_KORTHIAN_RELICS"]) then
                     isResearch = true
-                elseif t ~= nil and isResearch and t:find("^Use") then
-                    local num = t:match("%d+%sCataloged%sResearch")
+                elseif t ~= nil and isResearch and t:find(L["REGEX_USE"]) then
+                    local num = t:match(L["REGEX_RESEARCH_VALUE"])
                     num = num:match("%d+")
                     researchCount = tonumber(num or "")
                 end
